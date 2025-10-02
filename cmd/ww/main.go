@@ -28,7 +28,7 @@ var subcmds = map[string]func(args ...string){
 
 var (
 	verbose bool   = false
-	sigserv string = "https://webwormhole.io"
+	sigserv string = "https://wormhole.magi3r.de"
 )
 
 var stderr = flag.CommandLine.Output()

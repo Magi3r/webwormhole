@@ -10,198 +10,198 @@ const sw = self as ServiceWorkerGlobalScope & typeof globalThis;
 const streams = new Map();
 
 class Stream {
-	name: string;
-	size: number;
-	filetype: string;
-	offset = 0;
-	controller?: ReadableStreamDefaultController;
-	stream: ReadableStream;
+  name: string;
+  size: number;
+  filetype: string;
+  offset = 0;
+  controller?: ReadableStreamDefaultController;
+  stream: ReadableStream;
 
-	constructor(name: string, size: number, filetype: string) {
-		this.name = name;
-		this.size = size;
-		this.filetype = filetype;
-		this.stream = new ReadableStream(this);
-	}
+  constructor(name: string, size: number, filetype: string) {
+    this.name = name;
+    this.size = size;
+    this.filetype = filetype;
+    this.stream = new ReadableStream(this);
+  }
 
-	start(controller: ReadableStreamDefaultController) {
-		this.controller = controller;
-	}
+  start(controller: ReadableStreamDefaultController) {
+    this.controller = controller;
+  }
 
-	cancel(reason: string) {
-		console.warn("stream cancelled", reason);
-	}
+  cancel(reason: string) {
+    console.warn("stream cancelled", reason);
+  }
 }
 
 function waitForMetadata(id: string) {
-	return new Promise((resolve, reject) => {
-		streams.set(id, { resolve, reject });
-	});
+  return new Promise((resolve, reject) => {
+    streams.set(id, { resolve, reject });
+  });
 }
 
 function signalMetadataReady(id: string, s: Stream) {
-	if (streams.has(id)) {
-		streams.get(id).resolve(s);
-	}
+  if (streams.has(id)) {
+    streams.get(id).resolve(s);
+  }
 }
 
 sw.addEventListener("message", (e) => {
-	const msg = e.data;
-	const id = msg.id;
+  const msg = e.data;
+  const id = msg.id;
 
-	switch (msg.type) {
-		case "metadata": {
-			const s = new Stream(msg.name, msg.size, msg.filetype);
+  switch (msg.type) {
+    case "metadata": {
+      const s = new Stream(msg.name, msg.size, msg.filetype);
 
-			// Resolve promise if GET request arrived first.
-			signalMetadataReady(id, s);
+      // Resolve promise if GET request arrived first.
+      signalMetadataReady(id, s);
 
-			streams.set(id, s);
-			return;
-		}
-		case "data": {
-			const s = streams.get(id);
+      streams.set(id, s);
+      return;
+    }
+    case "data": {
+      const s = streams.get(id);
 
-			if (msg.offset !== s.offset) {
-				console.warn(`aborting ${id}: got data out of order`);
-				// TODO abort fetch response
-				streams.delete(id);
-				return;
-			}
-			s.controller.enqueue(new Uint8Array(msg.data));
-			s.offset += msg.data.byteLength;
+      if (msg.offset !== s.offset) {
+        console.warn(`aborting ${id}: got data out of order`);
+        // TODO abort fetch response
+        streams.delete(id);
+        return;
+      }
+      s.controller.enqueue(new Uint8Array(msg.data));
+      s.offset += msg.data.byteLength;
 
-			return;
-		}
-		case "end": {
-			const s = streams.get(id);
+      return;
+    }
+    case "end": {
+      const s = streams.get(id);
 
-			s.controller.close();
+      s.controller.close();
 
-			// Synchronize with fetch handler to clean up properly.
-			if (s.requestHandled) {
-				streams.delete(id);
-			} else {
-				s.streamHandled = true;
-			}
+      // Synchronize with fetch handler to clean up properly.
+      if (s.requestHandled) {
+        streams.delete(id);
+      } else {
+        s.streamHandled = true;
+      }
 
-			return;
-		}
-		case "error": {
-			streams.get(id).controller.error(msg.error);
-			return;
-		}
-	}
+      return;
+    }
+    case "error": {
+      streams.get(id).controller.error(msg.error);
+      return;
+    }
+  }
 });
 
 function encodeFilename(filename: string) {
-	return encodeURIComponent(filename)
-		.replace(/'/g, "%27")
-		.replace(/\(/g, "%28")
-		.replace(/\(/g, "%29")
-		.replace(/\*/g, "%2A");
+  return encodeURIComponent(filename)
+    .replace(/'/g, "%27")
+    .replace(/\(/g, "%28")
+    .replace(/\(/g, "%29")
+    .replace(/\*/g, "%2A");
 }
 
 async function streamDownload(id: string) {
-	// Request may arrive before metadata.
-	const s = streams.get(id) || (await waitForMetadata(id));
+  // Request may arrive before metadata.
+  const s = streams.get(id) || (await waitForMetadata(id));
 
-	// Synchronize with message handler end to clean up properly.
-	if (s.streamHandled) {
-		streams.delete(id);
-	} else {
-		s.requestHandled = true;
-	}
+  // Synchronize with message handler end to clean up properly.
+  if (s.streamHandled) {
+    streams.delete(id);
+  } else {
+    s.requestHandled = true;
+  }
 
-	const { size, name, filetype, stream } = s;
+  const { size, name, filetype, stream } = s;
 
-	console.log(`downloading ${name} (${id})`);
+  console.log(`downloading ${name} (${id})`);
 
-	return new Response(stream, {
-		headers: {
-			"Content-Type": filetype,
-			"Content-Length": size,
-			"Content-Disposition": `attachment; filename*=UTF-8''${encodeFilename(
-				name
-			)}`,
-		},
-	});
+  return new Response(stream, {
+    headers: {
+      "Content-Type": filetype,
+      "Content-Length": size,
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeFilename(
+        name,
+      )}`,
+    },
+  });
 }
 
 async function streamUpload(e: FetchEvent) {
-	const contentLength = e.request.headers.get("content-length");
-	const contentType = e.request.headers.get("content-type");
-	const form = await e.request.formData();
-	const title = form.get("title");
+  const contentLength = e.request.headers.get("content-length");
+  const contentType = e.request.headers.get("content-type");
+  const form = await e.request.formData();
+  const title = form.get("title");
 
-	if (!title) {
-		e.respondWith(new Response("no title", { status: 500 }));
-		return
-	}
+  if (!title) {
+    e.respondWith(new Response("no title", { status: 500 }));
+    return;
+  }
 
-	let body: ReadableStream<Uint8Array>;
-	if (e.request.body) {
-		body = e.request.body;
-	} else {
-		e.respondWith(new Response("no body", { status: 500 }));
-		return
-	}
+  let body: ReadableStream<Uint8Array>;
+  if (e.request.body) {
+    body = e.request.body;
+  } else {
+    e.respondWith(new Response("no body", { status: 500 }));
+    return;
+  }
 
-	console.log(`uploading ${title}`);
+  console.log(`uploading ${title}`);
 
-	e.respondWith(Response.redirect("/", 303)); // get index.html?
+  e.respondWith(Response.redirect("/", 303)); // get index.html?
 
-	const client = await sw.clients.get(e.clientId || e.resultingClientId);
-	if (!client) {
-		e.respondWith(new Response("no client", { status: 500 }));
-		return
-	}
+  const client = await sw.clients.get(e.clientId || e.resultingClientId);
+  if (!client) {
+    e.respondWith(new Response("no client", { status: 500 }));
+    return;
+  }
 
-	// ReadableStream is transferable on Chrome at the time of writing. Since Share
-	// Target also only works on Chome, we can use this and avoid the complexity of
-	// chunking over postMessage (like we do with downloads) or having to read the
-	// whole file into memory.
-	// TypeScript doesn't know that ReadableStream is transferable, hence body as
-	// any.
-	client.postMessage(
-		{
-			name: title,
-			size: contentLength,
-			type: contentType,
-			stream: body,
-		},
-		[body as any]
-	);
+  // ReadableStream is transferable on Chrome at the time of writing. Since Share
+  // Target also only works on Chome, we can use this and avoid the complexity of
+  // chunking over postMessage (like we do with downloads) or having to read the
+  // whole file into memory.
+  // TypeScript doesn't know that ReadableStream is transferable, hence body as
+  // any.
+  client.postMessage(
+    {
+      name: title,
+      size: contentLength,
+      type: contentType,
+      stream: body,
+    },
+    [body as any],
+  );
 }
 
 sw.addEventListener("fetch", (e) => {
-	const PREFIX = "/_";
-	const url = new URL(e.request.url);
+  const PREFIX = "/_";
+  const url = new URL(e.request.url);
 
-	// Stream download from WebRTC DataChannel.
-	if (url.pathname.startsWith(`${PREFIX}/`) && e.request.method === "GET") {
-		const id = url.pathname.substring(`${PREFIX}/`.length);
-		e.respondWith(streamDownload(id));
-		return;
-	}
+  // Stream download from WebRTC DataChannel.
+  if (url.pathname.startsWith(`${PREFIX}/`) && e.request.method === "GET") {
+    const id = url.pathname.substring(`${PREFIX}/`.length);
+    e.respondWith(streamDownload(id));
+    return;
+  }
 
-	// Stream upload to WebRTC DataChannel, triggered by Share Target API.
-	if (url.pathname.startsWith(`${PREFIX}/`) && e.request.method === "POST") {
-		streamUpload(e);
-		return;
-	}
+  // Stream upload to WebRTC DataChannel, triggered by Share Target API.
+  if (url.pathname.startsWith(`${PREFIX}/`) && e.request.method === "POST") {
+    streamUpload(e);
+    return;
+  }
 
-	// Default to passthrough.
-	e.respondWith(fetch(e.request));
+  // Default to passthrough.
+  e.respondWith(fetch(e.request));
 });
 
-if (chrome && chrome.runtime) {
-	chrome.action.onClicked.addListener(() => {
-		chrome.windows.create({
-			type: "panel",
-			url: chrome.runtime.getURL("index.html"),
-			width: 600,
-			height: 600,
-		});
-	});
-}
+// if (chrome && chrome.runtime) {
+//   chrome.action.onClicked.addListener(() => {
+//     chrome.windows.create({
+//       type: "panel",
+//       url: chrome.runtime.getURL("index.html"),
+//       width: 600,
+//       height: 600,
+//     });
+//   });
+// }

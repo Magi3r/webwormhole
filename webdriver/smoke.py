@@ -51,9 +51,9 @@ driver2 = webdriver.Chrome(options=opts)
 
 try:
 
-	driver1.get("https://webwormhole.io")
-	driver2.get("https://webwormhole.io")
-	
+	driver1.get("https://wormhole.magi3r.de")
+	driver2.get("https://wormhole.magi3r.de")
+
 	driver1.find_element(By.ID, 'dial').click()
 	WebDriverWait(driver1, 10).until(
 		EC.text_to_be_present_in_element((By.ID, "info"), "Waiting for")
