@@ -220,6 +220,7 @@ class Wormhole {
         return;
     }
     makePeerConnection(iceServers) {
+        console.log(iceServers);
         const pc = new RTCPeerConnection({ iceServers: iceServers });
         pc.onicecandidate = (e) => {
             if (!this.ws || !this.key || !this.pc) {
